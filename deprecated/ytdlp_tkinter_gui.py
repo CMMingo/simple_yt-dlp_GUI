@@ -25,36 +25,51 @@ from tkinter import (
 # SETTINGS FILE MANAGEMENT
 # ==================================================
 
-SETTINGS_FILE = "settings.json"
+# This script lives in deprecated/, so the project folder is one level up. The
+# settings folder is shared with the Qt app: same file, same three keys
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SETTINGS_DIR = os.path.join(PROJECT_DIR, "settings")
+SETTINGS_FILE = os.path.join(SETTINGS_DIR, "settings.json")
+
 DEFAULT_SETTINGS = {
     "theme": "dark",
-    "download_folder": os.getcwd(),
+    # The project folder, not the working directory: the defaults are written
+    # out on first run, so a cwd-dependent value would be baked in permanently
+    "download_folder": PROJECT_DIR,
     "allow_custom_command": False,
 }
 
 
-# Load settings from disk (or return defaults)
+# Write the given settings to disk, creating the folder if it is not there
+def write_settings(data):
+    os.makedirs(SETTINGS_DIR, exist_ok=True)
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+
+
+# Load settings from disk, filling in any key the file does not contain
 def load_settings():
-    # If the file does not exist, return defaults
-    if not os.path.exists(SETTINGS_FILE):
-        return DEFAULT_SETTINGS.copy()
+    settings = DEFAULT_SETTINGS.copy()
 
     try:
         with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:  # if the file is corrupted, fall back safely
-        return DEFAULT_SETTINGS.copy()
+            settings.update(json.load(f))
+    except (OSError, ValueError):
+        # Nothing readable yet: write the defaults so the file always exists
+        write_settings(settings)
+
+    return settings
 
 
 # Save current settings to disk
 def save_settings():
-    data = {
-        "theme": current_theme.get(),
-        "download_folder": download_path.get(),
-        "allow_custom_command": allow_command_var.get(),
-    }
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
+    write_settings(
+        {
+            "theme": current_theme.get(),
+            "download_folder": download_path.get(),
+            "allow_custom_command": allow_command_var.get(),
+        }
+    )
 
 
 # Load settings immediately at startup
@@ -66,6 +81,11 @@ settings = load_settings()
 # ==================================================
 
 yt_dlp_path = os.path.join(os.path.dirname(__file__), "yt-dlp.exe")
+if not os.path.exists(yt_dlp_path):
+    # This script now lives in deprecated/, so look in the project folder too
+    yt_dlp_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yt-dlp.exe"
+    )
 if not os.path.exists(yt_dlp_path):
     # If yt-dlp is not there, show error and exit. The update itself runs later,
     # with the window already on screen (see start_update)
@@ -212,7 +232,7 @@ split_chapters_var = tk.BooleanVar(value=False)  # split the download by chapter
 playlist_var = tk.BooleanVar(value=False)  # download every entry of a playlist
 command_var = tk.StringVar()  # arbitrary command typed by the user
 allow_command_var = tk.BooleanVar(
-    value=settings.get("allow_custom_command", False)
+    value=settings["allow_custom_command"]
 )  # whether the custom command box is shown at all
 download_path = tk.StringVar(
     value=settings["download_folder"]
