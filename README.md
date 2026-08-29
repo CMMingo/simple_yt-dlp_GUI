@@ -8,7 +8,8 @@ There are 2 versions, using Tkinter or Qt (PySide) for different styles. Both ha
 ## Features
 
 - **Audio or Video downloads:** Select between MP3 audio extraction or MP4 video downloads.
-- **Manual format selection:** For video downloads, enter your desired format (no automatic parsing).
+- **Quality presets:** Pick 4K, 2K, 1080p, 720p, 480p, best or smallest from a dropdown; no format codes needed.
+- **Manual format selection:** An advanced box still accepts raw format codes for full control.
 - **Split by chapters:** Optionally cut the download into one file per chapter, using the timestamps of the video.
 - **Custom command:** Type any command and run it as-is instead of the built-in options (enabled from the Settings tab).
 - **Stop button:** Cancel a running download without closing the app.
@@ -55,11 +56,29 @@ python ytdlp_tkinter_gui.py
 3. Paste the video URL in the URL box.
 4. Optionally, enter a filename.
 5. Select the download folder (default is current working directory).
-6. For video, enter the desired format.
+6. For video, pick a **Quality** preset (or leave it unset and use the button to list the formats).
 7. Optionally, tick **Split into tracks using the chapters/timestamps of the video** and
    **Download the whole playlist**.
 8. Click **Download** to start.
 9. The progress bar and output area show the download status.
+
+### Video quality
+
+Choosing **Video (MP4)** reveals a quality row:
+
+- **Quality** — a preset that yt-dlp resolves on its own: *Best available*, *4K (2160p)*, *2K (1440p)*,
+  *1080p*, *720p*, *480p* or *Smallest*. Each one takes the best video and audio tracks up to that
+  height and merges them, so no format codes are involved.
+- **Advanced** — the original box for raw format codes (for example `299+140`). When it has anything
+  in it, it overrides the preset.
+
+The presets degrade gracefully: asking for 4K on a video that tops out at 1080p simply downloads the
+1080p version. The opposite is not true — asking for 480p on a video whose lowest quality is 720p
+makes yt-dlp report `Requested format is not available`, which is deliberate, since silently handing
+back a much larger file would be worse.
+
+While no preset and no format code are set, the button reads **List formats** instead of **Download**,
+and clicking it prints the available formats for the URL rather than starting a download.
 
 ### Playlists
 
@@ -87,6 +106,8 @@ yt-dlp --force-keyframes-at-cut --split-chapters -x --audio-format mp3 -o "%(sec
 Clear the box to go back to the normal download options.
 
 ### Notes
+- The button label reflects what the next click does: **List formats** when no quality or format
+  code is chosen for a video, **Download** otherwise.
 - The download button is disabled until a URL or a custom command is provided, and stays disabled
   while a download runs. **Stop** cancels it, killing yt-dlp and anything it started.
 - The output area ends every run with `--- Finished ---`, `--- Failed (exit code N) ---` or
