@@ -1,3 +1,7 @@
 .venv
 __pycache__/
 yt-dlp.exe
+settings/
+dist/
+build/
+*.spec
