@@ -86,6 +86,28 @@ else:
 
 
 # ==================================================
+# VIDEO QUALITY PRESETS
+# ==================================================
+
+# "bv*+ba" takes the best video and audio tracks separately and merges them;
+# the "/b" fallback covers sites that only offer pre-merged files. A height
+# limit picks the closest quality below it when the video does not reach it.
+QUALITY_PRESETS = [
+    ("Not selected (list formats)", ""),
+    ("Best available", "bv*+ba/b"),
+    ("4K (2160p)", "bv*[height<=2160]+ba/b[height<=2160]"),
+    ("2K (1440p)", "bv*[height<=1440]+ba/b[height<=1440]"),
+    ("1080p", "bv*[height<=1080]+ba/b[height<=1080]"),
+    ("720p", "bv*[height<=720]+ba/b[height<=720]"),
+    ("480p", "bv*[height<=480]+ba/b[height<=480]"),
+    ("Smallest", "wv*+wa/w"),
+]
+
+QUALITY_LABELS = [label for label, _ in QUALITY_PRESETS]
+QUALITY_SELECTORS = dict(QUALITY_PRESETS)
+
+
+# ==================================================
 # DOWNLOAD PROGRESS
 # ==================================================
 
@@ -158,6 +180,18 @@ def apply_theme():
     style.configure("TRadiobutton", background=t["bg"], foreground=t["fg"])
     style.configure("TButton", background="#4a4a4a", foreground=t["fg"])
     style.configure("TEntry", fieldbackground=t["entry"], foreground=t["fg"])
+    style.configure(
+        "TCombobox", fieldbackground=t["entry"], background=t["entry"], foreground=t["fg"]
+    )
+    style.map(
+        "TCombobox",
+        fieldbackground=[("readonly", t["entry"])],
+        foreground=[("readonly", t["fg"])],
+    )
+    # The dropdown list is a plain Tk listbox, styled through the option database
+    root.option_add("*TCombobox*Listbox.background", t["entry"])
+    root.option_add("*TCombobox*Listbox.foreground", t["fg"])
+    root.option_add("*TCombobox*Listbox.selectBackground", "#5c9ded")
     style.configure("Horizontal.TProgressbar", background="#5c9ded")
     # Text widget must be styled manually
     output.configure(bg=t["entry"], fg=t["fg"], insertbackground=t["fg"])
@@ -171,7 +205,8 @@ def apply_theme():
 
 download_type = tk.StringVar(value="audio")  # download type (default = audio)
 url_var = tk.StringVar()  # URL entered by the user
-format_var = tk.StringVar()  # video format selection
+format_var = tk.StringVar()  # video format selection (advanced)
+quality_var = tk.StringVar(value=QUALITY_LABELS[0])  # video quality preset
 filename_var = tk.StringVar()  # optional output filename
 split_chapters_var = tk.BooleanVar(value=False)  # split the download by chapters
 playlist_var = tk.BooleanVar(value=False)  # download every entry of a playlist
@@ -240,19 +275,37 @@ radio_video = ttk.Radiobutton(
 radio_audio.grid(row=0, column=0, sticky="w")
 radio_video.grid(row=0, column=1, sticky="w", padx=(20, 5))
 
-# Format entry shown only for video
-format_entry = ttk.Entry(type_frame, textvariable=format_var, width=25)
-format_entry.grid(row=0, column=2)
-format_entry.grid_remove()
+# ---- Video options (shown only for video, packed by validate) ----
+
+video_options = ttk.Frame(main)
+
+ttk.Label(video_options, text="Quality").grid(row=0, column=0, sticky="w")
+
+# Picks the best format up to that height, or the closest quality below it
+quality_combo = ttk.Combobox(
+    video_options,
+    textvariable=quality_var,
+    values=QUALITY_LABELS,
+    state="readonly",
+    width=26,
+)
+quality_combo.grid(row=0, column=1, padx=(5, 20))
+
+ttk.Label(video_options, text="Advanced").grid(row=0, column=2, sticky="w")
+
+# Overrides the quality preset when filled in
+format_entry = ttk.Entry(video_options, textvariable=format_var, width=24)
+format_entry.grid(row=0, column=3, padx=(5, 0))
 
 # ---- Split by chapters ----
 
 # yt-dlp downloads the video normally when it has no chapters
-ttk.Checkbutton(
+split_check = ttk.Checkbutton(
     main,
     text="Split into tracks using the chapters/timestamps of the video",
     variable=split_chapters_var,
-).pack(anchor="w", pady=(5, 0))
+)
+split_check.pack(anchor="w", pady=(5, 0))
 
 # ---- Playlists ----
 
@@ -427,9 +480,23 @@ def append_output(text):
     output.configure(state="disabled")
 
 
+# The -f value for a video download, or "" when nothing is chosen yet
+def format_selector():
+    return format_var.get().strip() or QUALITY_SELECTORS.get(quality_var.get(), "")
+
+
 # Validate UI state and enable/disable button
 def validate():
-    # Stop is only available while something is running
+    # Show the quality row only for video
+    if download_type.get() == "video":
+        video_options.pack(anchor="w", pady=(5, 0), before=split_check)
+    else:
+        video_options.pack_forget()
+
+    # Without a quality or a format code, the button lists the formats instead
+    listing = download_type.get() == "video" and not format_selector()
+    download_btn.config(text="List formats" if listing else "Download")
+
     can_stop = process_running.get() and not updating
     stop_btn.config(state="normal" if can_stop else "disabled")
 
@@ -442,12 +509,6 @@ def validate():
     has_command = allow_command_var.get() and command_var.get().strip()
     valid = (download_type.get() and url_var.get().strip()) or has_command
     download_btn.config(state="normal" if valid else "disabled")
-
-    # Show format field only for video
-    if download_type.get() == "video":
-        format_entry.grid()
-    else:
-        format_entry.grid_remove()
 
 
 # Start a process in the background and lock the UI while it runs
@@ -602,8 +663,9 @@ def start_download():
         launch(cmd)
         return
 
-    # VIDEO: list formats first
-    if not format_var.get().strip():
+    # VIDEO: with no quality and no format code, show what is available
+    selector = format_selector()
+    if not selector:
         append_output("\nListing formats...\n")
         cmd = [yt_dlp_path, *common_args, "-F", url_var.get()]
         launch(cmd)
@@ -615,7 +677,7 @@ def start_download():
         *common_args,
         *split_args,
         "-f",
-        format_var.get(),
+        selector,
         "--merge-output-format",
         "mp4",
         "-o",
@@ -634,6 +696,8 @@ def start_download():
 download_type.trace_add("write", lambda *_: validate())
 url_var.trace_add("write", lambda *_: validate())
 command_var.trace_add("write", lambda *_: validate())
+format_var.trace_add("write", lambda *_: validate())
+quality_var.trace_add("write", lambda *_: validate())
 
 # Apply theme once widgets exist
 apply_theme()

@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -96,6 +97,28 @@ if os.path.exists(bundled_ffmpeg):
 else:
     ffmpeg_path = shutil.which("ffmpeg")
     bundled_ffmpeg = None
+
+
+# ==================================================
+# VIDEO QUALITY PRESETS
+# ==================================================
+
+# "bv*+ba" takes the best video and audio tracks separately and merges them;
+# the "/b" fallback covers sites that only offer pre-merged files. A height
+# limit picks the closest quality below it when the video does not reach it.
+QUALITY_PRESETS = [
+    ("Not selected (list formats)", ""),
+    ("Best available", "bv*+ba/b"),
+    ("4K (2160p)", "bv*[height<=2160]+ba/b[height<=2160]"),
+    ("2K (1440p)", "bv*[height<=1440]+ba/b[height<=1440]"),
+    ("1080p", "bv*[height<=1080]+ba/b[height<=1080]"),
+    ("720p", "bv*[height<=720]+ba/b[height<=720]"),
+    ("480p", "bv*[height<=480]+ba/b[height<=480]"),
+    ("Smallest", "wv*+wa/w"),
+]
+
+QUALITY_LABELS = [label for label, _ in QUALITY_PRESETS]
+QUALITY_SELECTORS = dict(QUALITY_PRESETS)
 
 
 # ==================================================
@@ -210,17 +233,41 @@ class YtDlpGUI(QMainWindow):
 
         type_layout.addWidget(self.radio_audio)
         type_layout.addWidget(self.radio_video)
-
-        self.format_entry = QLineEdit()
-        self.format_entry.setPlaceholderText(
-            "Enter format code (e.g.: 'video_code+audio_code')"
-        )
-        self.format_entry.setMaximumWidth(300)
-        self.format_entry.setVisible(False)
-        type_layout.addWidget(self.format_entry)
         type_layout.addStretch()
 
         layout.addLayout(type_layout)
+
+        # Video options: a quality preset, and the raw format box for advanced use
+        self.video_options = QWidget()
+        video_layout = QHBoxLayout()
+        video_layout.setContentsMargins(0, 5, 0, 0)
+
+        video_layout.addWidget(QLabel("Quality"))
+
+        self.quality_combo = QComboBox()
+        self.quality_combo.addItems(QUALITY_LABELS)
+        self.quality_combo.setMinimumWidth(200)
+        self.quality_combo.setToolTip(
+            "Picks the best format up to that height. A video that does not "
+            "reach it is downloaded at the closest quality below."
+        )
+        self.quality_combo.currentIndexChanged.connect(self.validate)
+        video_layout.addWidget(self.quality_combo)
+
+        video_layout.addSpacing(20)
+        video_layout.addWidget(QLabel("Advanced"))
+
+        self.format_entry = QLineEdit()
+        self.format_entry.setPlaceholderText("Format codes, e.g. 299+140")
+        self.format_entry.setMaximumWidth(220)
+        self.format_entry.setToolTip("Overrides the quality preset when filled in.")
+        self.format_entry.textChanged.connect(self.validate)
+        video_layout.addWidget(self.format_entry)
+        video_layout.addStretch()
+
+        self.video_options.setLayout(video_layout)
+        self.video_options.setVisible(False)
+        layout.addWidget(self.video_options)
 
         # Split by chapters
         self.split_chapters_check = QCheckBox(
@@ -384,8 +431,7 @@ class YtDlpGUI(QMainWindow):
         self.validate()
 
     def on_type_changed(self):
-        is_video = self.radio_video.isChecked()
-        self.format_entry.setVisible(is_video)
+        self.video_options.setVisible(self.radio_video.isChecked())
         self.validate()
 
     def on_folder_edited(self, folder):
@@ -402,7 +448,18 @@ class YtDlpGUI(QMainWindow):
                 self.current_theme, self.download_folder, self.allow_custom_command
             )
 
+    def format_selector(self):
+        """The -f value for a video download, or "" when nothing is chosen yet."""
+        return (
+            self.format_entry.text().strip()
+            or QUALITY_SELECTORS[self.quality_combo.currentText()]
+        )
+
     def validate(self):
+        # Without a quality or a format code, the button lists the formats instead
+        listing = self.radio_video.isChecked() and not self.format_selector()
+        self.download_btn.setText("List formats" if listing else "Download")
+
         self.stop_btn.setEnabled(self.process_running and not self.updating)
 
         if self.process_running:
@@ -579,8 +636,9 @@ class YtDlpGUI(QMainWindow):
             self.launch(cmd)
             return
 
-        # Video: list formats first if no format specified
-        if not self.format_entry.text().strip():
+        # Video: with no quality and no format code, show what is available
+        selector = self.format_selector()
+        if not selector:
             self.append_output("\nListing formats...\n")
             cmd = [yt_dlp_path, *common_args, "-F", self.url_entry.text()]
             self.launch(cmd)
@@ -592,7 +650,7 @@ class YtDlpGUI(QMainWindow):
             *common_args,
             *split_args,
             "-f",
-            self.format_entry.text(),
+            selector,
             "--merge-output-format",
             "mp4",
             "-o",
@@ -651,6 +709,19 @@ class YtDlpGUI(QMainWindow):
                 QPushButton:disabled {
                     background-color: #333333;
                     color: #666666;
+                }
+                QComboBox {
+                    background-color: #2d2d2d;
+                    color: #ffffff;
+                    border: 1px solid #555555;
+                    padding: 4px;
+                    border-radius: 3px;
+                }
+                QComboBox QAbstractItemView {
+                    background-color: #2d2d2d;
+                    color: #ffffff;
+                    selection-background-color: #5c9ded;
+                    selection-color: #000000;
                 }
                 QTextEdit {
                     background-color: #2d2d2d;
@@ -723,6 +794,19 @@ class YtDlpGUI(QMainWindow):
                 QPushButton:disabled {
                     background-color: #f0f0f0;
                     color: #999999;
+                }
+                QComboBox {
+                    background-color: #ffffff;
+                    color: #000000;
+                    border: 1px solid #cccccc;
+                    padding: 4px;
+                    border-radius: 3px;
+                }
+                QComboBox QAbstractItemView {
+                    background-color: #ffffff;
+                    color: #000000;
+                    selection-background-color: #5c9ded;
+                    selection-color: #ffffff;
                 }
                 QTextEdit {
                     background-color: #ffffff;
