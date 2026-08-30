@@ -29,8 +29,10 @@ sites without touching a command line.
 
 - Python 3.8+
 - **PySide6** — `pip install pyside6`
-- **yt-dlp**, found in the project folder, in `src/`, or on PATH. It updates itself at startup.
-- **ffmpeg** (and `ffprobe`), on PATH or in the project folder. Required for MP3 extraction, for
+- **yt-dlp**, found in `bin/` when running from source (packaged, directly beside the executable
+  instead — see [Building a standalone `.exe`](#building-a-standalone-exe)), or on PATH.
+  It updates itself at startup.
+- **ffmpeg** (and `ffprobe`), on PATH or in `bin/` — same rule as yt-dlp. Required for MP3 extraction, for
   merging video with audio, and for splitting chapters. Without it the app still runs and warns you
   in the output area, but those three things fail.
 
@@ -123,24 +125,29 @@ Dark by default, light optional, switched from the **Settings** tab and remember
 
 ## Settings
 
-`settings.json` holds three keys — `theme`, `download_folder` and `allow_custom_command` — and lives
-in a `settings/` folder at the root of the app: the project folder when running from source, next to
-the executable when packaged.
+`settings.json` holds three keys — `theme`, `download_folder` and `allow_custom_command`. Where it
+lives depends on how the app is running, the same split as the yt-dlp binary:
+
+| Running | Settings file |
+| --- | --- |
+| from source | `settings/settings.json` in the project folder |
+| packaged `.exe` | `settings.json` directly beside the executable — no `settings/` folder |
 
 Values resolve in order, each overriding the previous:
 
 1. the built-in defaults,
 2. a copy shipped inside a packaged build, if there is one,
-3. the user's own `settings/settings.json`.
+3. the user's own settings file, at whichever of the two paths above applies.
 
 Only the last is ever written. From source it is created on first run, so there is always something
 to hand-edit. A packaged `.exe` creates nothing until a setting is actually changed — it reads its
 shipped copy straight out of the bundle. A corrupted file is ignored and falls back the same way.
 
 There is no fallback to `%LOCALAPPDATA%` or anywhere else, which keeps the app portable: copy the
-folder and your settings come with it. The trade-off is that it needs write access where it sits, so
-do not install it somewhere like *Program Files*. The path is also never resolved against the working
-directory, so launching from elsewhere cannot silently start you on blank settings.
+folder (or the `.exe`) and your settings come with it. The trade-off is that it needs write access
+where it sits, so do not install it somewhere like *Program Files*. The path is also never resolved
+against the working directory, so launching from elsewhere cannot silently start you on blank
+settings.
 
 `settings/` is git-ignored — your download folder is never committed.
 
@@ -155,7 +162,7 @@ pip install pyinstaller
 From the project folder:
 
 ```bash
-pyinstaller --onefile --windowed --name "yt-dlp GUI" --paths src --add-data "yt-dlp.exe;." --add-data "settings;settings" src/ytdlp_qt_gui.py
+pyinstaller --onefile --windowed --name "yt-dlp GUI" --paths src --add-data "bin/yt-dlp.exe;." --add-data "settings/settings.json;." src/ytdlp_qt_gui.py
 ```
 
 That produces a single `dist/yt-dlp GUI.exe` of about 63 MB with nothing missing.
@@ -166,8 +173,8 @@ That produces a single `dist/yt-dlp GUI.exe` of about 63 MB with nothing missing
 | `--windowed` | no console window behind the GUI |
 | `--name "yt-dlp GUI"` | what the `.exe` is called |
 | `--paths src` | guarantees `import ytdlp_core` resolves during analysis |
-| `--add-data "yt-dlp.exe;."` | bundles yt-dlp inside the executable |
-| `--add-data "settings;settings"` | ships your current settings as the starting point |
+| `--add-data "bin/yt-dlp.exe;."` | bundles yt-dlp from `bin/` on disk, at the executable's root |
+| `--add-data "settings/settings.json;."` | ships your current settings, at the executable's root |
 
 **You never list `ytdlp_core.py`.** PyInstaller follows the import graph and pulls it in
 automatically; `--add-data` is only for things that are *not* imported. `--paths src` is a safeguard
@@ -178,8 +185,13 @@ rather than a requirement — PyInstaller already searches the script's own fold
 **yt-dlp is copied out on first run.** A `--onefile` build unpacks its bundle into a temporary folder
 that Windows deletes on exit. yt-dlp updates itself by replacing its own executable, so running it
 from there would throw the update away every time — re-downloading it on *every launch*, and failing
-outright when offline. Instead the app copies it out once, and from then on runs and updates that
-copy.
+outright when offline. Instead the app copies it out once, directly beside the executable, and from
+then on runs and updates that copy.
+
+This is deliberately not the same layout as the repo. In the project, `bin/yt-dlp.exe` keeps
+executables out of the root; packaged, there is no `bin/` at all — the `--add-data "...;."` above
+places the file at the *root* of the bundle regardless of where it sat on disk, so the app looks for
+it directly beside itself once frozen, not in a `bin/` subfolder.
 
 **Settings are not copied**, because they never need to be written in order to be used. The app reads
 the bundled copy in place, so a fresh build leaves only:
@@ -189,9 +201,11 @@ yt-dlp GUI.exe      what you shared
 yt-dlp.exe          copied out on first run, updated from then on
 ```
 
-A real `settings/settings.json` appears beside the executable only when someone changes a setting,
-and overrides the shipped copy from then on. Delete it to go back to the settings you shipped;
-delete `yt-dlp.exe` and the app extracts a fresh one.
+Here too the packaged layout is not the repo's: `settings/settings.json` on disk is bundled with
+`--add-data "settings/settings.json;."`, which places just that file at the bundle's root — so a
+real `settings.json` appears directly beside the executable only when someone changes a setting, no
+`settings/` folder involved, overriding the shipped copy from then on. Delete it to go back to the
+settings you shipped; delete `yt-dlp.exe` and the app extracts a fresh one.
 
 An `.exe` cannot update the copy inside itself — the bundle is unpacked to a temporary folder and the
 running executable is locked by Windows — so bundled settings are read-only by nature. Reading them
@@ -206,7 +220,7 @@ in place is what keeps a fresh build from littering.
 It can be, and it needs no copying out since it never updates itself:
 
 ```bash
-pyinstaller --onefile --windowed --name "yt-dlp GUI" --paths src --add-data "yt-dlp.exe;." --add-data "settings;settings" --add-data "ffmpeg.exe;." --add-data "ffprobe.exe;." src/ytdlp_qt_gui.py
+pyinstaller --onefile --windowed --name "yt-dlp GUI" --paths src --add-data "bin/yt-dlp.exe;." --add-data "settings/settings.json;." --add-data "bin/ffmpeg.exe;." --add-data "bin/ffprobe.exe;." src/ytdlp_qt_gui.py
 ```
 
 The problem is size. A full `ffmpeg.exe` is around 225 MB and `ffprobe.exe` another 225 MB — both are
@@ -217,12 +231,13 @@ In order of preference:
 
 1. **Do not bundle it.** The app finds ffmpeg on PATH and warns clearly when it is missing. Best for
    your own use.
-2. **Ship it beside the `.exe`.** Put `ffmpeg.exe` and `ffprobe.exe` in the same folder and zip the
-   three together. The app looks there first, and there is no unpacking cost. Best for sharing.
+2. **Ship it beside the `.exe`.** Put `ffmpeg.exe` and `ffprobe.exe` in the same folder as the
+   executable (not `bin/` — that layout is source-only) and zip the three together. The app looks
+   there first, and there is no unpacking cost. Best for sharing.
 3. **Bundle it** only if one literal file matters more than size and startup time — and use an
    "essentials" ffmpeg build, which is a fraction of the size.
 
-Both files must exist in the project folder or PyInstaller fails on the missing `--add-data` source.
+Both files must exist in `bin/` on disk (where `--add-data` reads them from) or PyInstaller fails on the missing source.
 Always include `ffprobe.exe` with ffmpeg: yt-dlp needs both, which is why the app passes the
 containing *folder* to `--ffmpeg-location` rather than the ffmpeg file itself.
 
@@ -251,12 +266,18 @@ tests/
     test_core.py           tests for the core; never opens a window
 deprecated/
     ytdlp_tkinter_gui.py   the old Tkinter app, self-contained and frozen
+bin/
+    yt-dlp.exe             updated by the app itself; git-ignored
 settings/settings.json     written by the app; git-ignored
-yt-dlp.exe                 updated by the app itself
 ```
 
-Runtime files (`settings/`, `yt-dlp.exe`) sit at the root, never inside `src/`: source is what git
-tracks and can replace at will, and mixing state into it means a clean checkout wipes your settings.
+Runtime files (`bin/`, `settings/`) sit at the root, never inside `src/`: source is what git tracks
+and can replace at will, and mixing state or downloaded binaries into it means a clean checkout wipes
+them. `bin/` itself is tracked (via `bin/.gitkeep`) so the folder always exists; its contents are not.
+
+`bin/` is a *repo* convention, not something the packaged app knows about. Once built, the `.exe` and
+the tools it needs sit flat, next to each other — see
+[What lands next to the `.exe`](#what-lands-next-to-the-exe).
 
 ### Why the logic is separate
 
