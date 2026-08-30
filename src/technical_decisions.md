@@ -115,6 +115,28 @@ as the built `.exe` (zipped together) over baking them into the PyInstaller bund
 the end user, none of the startup cost. Only reach for `--add-data` if a single-file deliverable is a
 hard requirement, and consider a stripped "essentials" ffmpeg build instead of the full one.
 
+## The PyInstaller `.spec` file
+
+`packaging/yt-dlp GUI.spec` is checked into git (a `!packaging/*.spec` exception carves it out of the
+blanket `*.spec` ignore rule) so the exact build configuration — the `--add-data` entries in
+particular — isn't just documented prose that can drift from what a real build uses.
+
+Its paths (`../src/ytdlp_qt_gui.py`, `../bin/yt-dlp.exe`, `../settings/settings.json`) are relative to
+**the `.spec` file's own folder**, not to the working directory `pyinstaller` is invoked from — that's
+how PyInstaller resolves relative paths inside a spec. Build from the project root
+(`pyinstaller "packaging/yt-dlp GUI.spec"`); `dist/` and `build/` still land in the project root
+regardless, since `--distpath`/`--workpath` default relative to the invocation `cwd`, not `SPECPATH`.
+
+To regenerate it after changing the build flags:
+
+```bash
+pyi-makespec --onefile --windowed --name "yt-dlp GUI" --paths src --add-data "bin/yt-dlp.exe;." --add-data "settings/settings.json;." --specpath packaging src/ytdlp_qt_gui.py
+```
+
+`pyi-makespec` rewrites the script's own path to be relative to `--specpath`, but leaves `pathex` and
+`--add-data` sources exactly as typed — those need the `../` prefix added by hand afterwards, or the
+next build will fail looking for `packaging/bin/yt-dlp.exe`.
+
 ## Testing
 
 `tests/test_core.py` never imports a GUI toolkit and never opens a network connection. Frozen-build

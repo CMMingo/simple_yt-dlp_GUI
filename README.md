@@ -86,6 +86,8 @@ tests/
     test_core.py            tests for ytdlp_core; no window opened
 deprecated/
     ytdlp_tkinter_gui.py    old Tkinter app, self-contained
+packaging/
+    yt-dlp GUI.spec         PyInstaller build spec
 bin/                        yt-dlp.exe / ffmpeg.exe (git-ignored contents)
 settings/settings.json      git-ignored
 ```
@@ -105,12 +107,13 @@ architecture, the settings/packaging layout, and what not to bundle.
 
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --windowed --name "yt-dlp GUI" --paths src --add-data "bin/yt-dlp.exe;." --add-data "settings/settings.json;." src/ytdlp_qt_gui.py
+pyinstaller "packaging/yt-dlp GUI.spec"
 ```
 
-Produces `dist/yt-dlp GUI.exe` (~63 MB). yt-dlp and your current settings are seeded next to the
-`.exe` on first run; add `--add-data "bin/ffmpeg.exe;."` and `--add-data "bin/ffprobe.exe;."` to
-bundle ffmpeg too (adds ~450 MB — usually better shipped alongside the `.exe` in a zip instead).
+Run from the project root. Produces `dist/yt-dlp GUI.exe` (~63 MB). yt-dlp and your current settings
+are seeded next to the `.exe` on first run. To bundle ffmpeg too (adds ~450 MB — usually better
+shipped alongside the `.exe` in a zip instead), add its `datas` entries to
+[`packaging/yt-dlp GUI.spec`](packaging/yt-dlp%20GUI.spec).
 
 ---
 
