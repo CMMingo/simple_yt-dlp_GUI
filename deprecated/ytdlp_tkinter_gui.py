@@ -82,10 +82,16 @@ settings = load_settings()
 
 yt_dlp_path = os.path.join(os.path.dirname(__file__), "yt-dlp.exe")
 if not os.path.exists(yt_dlp_path):
-    # This script now lives in deprecated/, so look in the project folder too
-    yt_dlp_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yt-dlp.exe"
-    )
+    # This script now lives in deprecated/, so also look in the project folder,
+    # and in bin/ where the Qt app keeps its executables
+    project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for candidate in (
+        os.path.join(project_dir, "bin", "yt-dlp.exe"),
+        os.path.join(project_dir, "yt-dlp.exe"),
+    ):
+        if os.path.exists(candidate):
+            yt_dlp_path = candidate
+            break
 if not os.path.exists(yt_dlp_path):
     # If yt-dlp is not there, show error and exit. The update itself runs later,
     # with the window already on screen (see start_update)

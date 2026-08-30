@@ -58,10 +58,10 @@ def bundle_dir():
 
 
 def settings_dir():
-    """The settings/ folder at the root of the app.
+    """The settings/ folder in the repo. Source layout only — see settings_path().
 
-    Only a path: it is created when something is actually saved, so a packaged
-    app that nobody has customised does not litter the folder it sits in.
+    Only a path: it is created when something is actually saved, so a run from
+    source that nobody has customised does not litter the project root.
     """
     return os.path.join(app_dir(), "settings")
 
@@ -72,13 +72,23 @@ def settings_dir():
 
 
 def settings_path():
-    """The settings the user owns and the app writes to."""
+    """The settings the user owns and the app writes to.
+
+    Deliberately not the same layout as the repo: from source it is
+    settings/settings.json, keeping the project root tidy. Packaged, there is
+    no settings/ at all — `--add-data "settings/settings.json;."` (see the
+    packaging docs) places the shipped copy at the bundle's root, so the
+    file the user's own changes get written to sits directly beside the
+    executable instead, matching where the seeded yt-dlp binary ends up.
+    """
+    if getattr(sys, "frozen", False):
+        return os.path.join(app_dir(), "settings.json")
     return os.path.join(settings_dir(), "settings.json")
 
 
 def bundled_settings_path():
     """Settings shipped inside a frozen build: read-only defaults, never written."""
-    return os.path.join(bundle_dir(), "settings", "settings.json")
+    return os.path.join(bundle_dir(), "settings.json")
 
 
 def _read_json(path):
@@ -125,8 +135,12 @@ def load_settings():
 
 
 def save_settings(settings):
-    """Write the settings, creating settings/ the first time it is needed."""
-    os.makedirs(settings_dir(), exist_ok=True)
+    """Write the settings, creating settings/ the first time it is needed.
+
+    Only relevant from source: packaged, settings_path() already sits directly
+    in app_dir(), which exists as soon as the .exe does.
+    """
+    os.makedirs(os.path.dirname(settings_path()), exist_ok=True)
 
     with open(settings_path(), "w", encoding="utf-8") as f:
         json.dump(settings, f, indent=4)
@@ -181,17 +195,28 @@ def _seed_from_bundle(relative_path):
 
 
 def find_tools(folder=None):
-    """Locate yt-dlp and ffmpeg, unpacking bundled copies on the first run."""
+    """Locate yt-dlp and ffmpeg, unpacking bundled copies on the first run.
+
+    The two layouts are deliberately different. In the repo, executables sit
+    in bin/ so the project root stays tidy. Packaged, they sit directly beside
+    the .exe instead: `--add-data "bin/yt-dlp.exe;."` places the file at the
+    bundle's root regardless of where it came from on disk, so no path
+    remapping is needed here — seeding is a plain root-to-root copy.
+    """
     if folder:
         folders = [folder]
     else:
         for name in ("yt-dlp", "ffmpeg", "ffprobe"):
-            _seed_from_bundle(name + ".exe" if os.name == "nt" else name)
+            filename = name + ".exe" if os.name == "nt" else name
+            _seed_from_bundle(filename)
 
-        # The app root first; from source also src/, in case a binary is kept there
-        folders = [app_dir()]
-        if not getattr(sys, "frozen", False):
-            folders.append(HERE)
+        if getattr(sys, "frozen", False):
+            folders = [app_dir()]  # the seeded copy lands directly beside the .exe
+        else:
+            folders = [
+                os.path.join(PROJECT_DIR, "bin"),
+                os.path.join(HERE, "bin"),
+            ]
 
     yt_dlp, _ = _find_binary("yt-dlp", folders)
     ffmpeg, ffmpeg_bundled = _find_binary("ffmpeg", folders)

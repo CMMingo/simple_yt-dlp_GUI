@@ -138,6 +138,58 @@ def test_update_command():
     assert core.update_command(TOOLS) == ["YTDLP", "--update"]
 
 
+def test_from_source_tools_are_found_in_bin():
+    # The repo layout: yt-dlp.exe lives in bin/, keeping the project root tidy
+    original_find = core._find_binary
+
+    def fake_find(name, folders):
+        assert any(folder.endswith(os.sep + "bin") for folder in folders), folders
+        return original_find(name, folders)
+
+    core._find_binary = fake_find
+    try:
+        core.find_tools()
+    finally:
+        core._find_binary = original_find
+
+
+def test_a_frozen_build_finds_yt_dlp_directly_beside_the_exe():
+    # Packaged, bin/ is not part of the layout: everything sits at the app root
+    import shutil as _shutil, tempfile
+
+    app = tempfile.mkdtemp()
+    binary = os.path.join(app, "yt-dlp.exe")
+    open(binary, "w").close()
+
+    try:
+        with frozen_as(app, app):  # a --onedir build: bundle dir == app dir
+            tools = core.find_tools()
+            assert tools.yt_dlp == binary
+            assert not os.path.exists(os.path.join(app, "bin"))
+    finally:
+        _shutil.rmtree(app, ignore_errors=True)
+
+
+def test_a_frozen_onefile_build_seeds_yt_dlp_beside_the_exe():
+    # `--add-data "bin/yt-dlp.exe;."` bundles the file at the archive's root,
+    # regardless of it living in bin/ on disk, so it seeds out to the app root
+    import shutil as _shutil, tempfile
+
+    bundle = tempfile.mkdtemp()
+    app = tempfile.mkdtemp()
+    open(os.path.join(bundle, "yt-dlp.exe"), "w").close()
+
+    try:
+        with frozen_as(bundle, app):
+            tools = core.find_tools()
+            assert tools.yt_dlp == os.path.join(app, "yt-dlp.exe")
+            assert os.path.isfile(tools.yt_dlp)  # copied out, not just located
+            assert not os.path.exists(os.path.join(app, "bin"))
+    finally:
+        _shutil.rmtree(bundle, ignore_errors=True)
+        _shutil.rmtree(app, ignore_errors=True)
+
+
 # ==================================================
 # QUALITY PRESETS
 # ==================================================
@@ -280,7 +332,7 @@ def test_missing_keys_are_filled_in():
         assert key in settings
 
 
-def test_settings_live_in_a_settings_folder_at_the_app_root():
+def test_from_source_settings_live_in_a_settings_folder_at_the_app_root():
     assert core.settings_dir() == os.path.join(core.app_dir(), "settings")
     assert core.settings_path() == os.path.join(core.settings_dir(), "settings.json")
 
@@ -291,31 +343,36 @@ def test_the_app_root_is_the_project_folder_not_src():
     assert core.settings_dir() != os.path.join(source_folder, "settings")
 
 
-def test_asking_for_the_settings_folder_does_not_create_it():
-    # A packaged app nobody has customised must not litter the folder it sits in
+def test_a_frozen_build_writes_settings_directly_beside_the_exe():
+    # Packaged, settings/ is not part of the layout: no subfolder, ever
     import shutil as _shutil, tempfile
 
     scratch = tempfile.mkdtemp()
     try:
         with frozen_as(scratch, scratch):
-            folder = core.settings_dir()
-            assert not os.path.exists(folder)
+            path = core.settings_path()
+            assert path == os.path.join(scratch, "settings.json")
+            assert not os.path.exists(path)
+
             core.load_settings()
-            assert not os.path.exists(folder), "loading settings created the folder"
+            assert not os.path.exists(path), "loading settings created a file"
+            assert not os.path.exists(os.path.join(scratch, "settings"))
 
             core.save_settings({"theme": "light"})
-            assert os.path.isdir(folder), "saving should create it"
+            assert os.path.isfile(path), "saving should create it"
+            assert not os.path.exists(os.path.join(scratch, "settings"))
     finally:
         _shutil.rmtree(scratch, ignore_errors=True)
 
 
 def test_a_frozen_build_reads_settings_out_of_the_bundle():
+    # `--add-data "settings/settings.json;."` bundles the file at the archive's
+    # root, so a frozen build looks for it there, not in a settings/ subfolder
     import json as _json, shutil as _shutil, tempfile
 
     bundle = tempfile.mkdtemp()
     app = tempfile.mkdtemp()
-    os.makedirs(os.path.join(bundle, "settings"))
-    with open(os.path.join(bundle, "settings", "settings.json"), "w") as f:
+    with open(os.path.join(bundle, "settings.json"), "w") as f:
         _json.dump({"theme": "light", "download_folder": r"D:\Shipped"}, f)
 
     try:
@@ -327,6 +384,7 @@ def test_a_frozen_build_reads_settings_out_of_the_bundle():
             # ...a key the bundle omits still falls back to the built-in default
             assert settings["allow_custom_command"] is False
             # ...and nothing was written beside the executable
+            assert not os.path.exists(os.path.join(app, "settings.json"))
             assert not os.path.exists(os.path.join(app, "settings"))
     finally:
         _shutil.rmtree(bundle, ignore_errors=True)
@@ -338,14 +396,14 @@ def test_a_saved_setting_overrides_the_bundled_one():
 
     bundle = tempfile.mkdtemp()
     app = tempfile.mkdtemp()
-    os.makedirs(os.path.join(bundle, "settings"))
-    with open(os.path.join(bundle, "settings", "settings.json"), "w") as f:
+    with open(os.path.join(bundle, "settings.json"), "w") as f:
         _json.dump({"theme": "light"}, f)
 
     try:
         with frozen_as(bundle, app):
             core.save_settings(dict(core.load_settings(), theme="dark"))
             assert core.load_settings()["theme"] == "dark"
+            assert not os.path.exists(os.path.join(app, "settings"))
     finally:
         _shutil.rmtree(bundle, ignore_errors=True)
         _shutil.rmtree(app, ignore_errors=True)
