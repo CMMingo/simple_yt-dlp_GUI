@@ -106,7 +106,8 @@ DEFAULT_SETTINGS = {
     # The app root rather than the working directory: the defaults are written
     # out on first run, so a cwd-dependent value would be baked in permanently
     "download_folder": app_dir(),
-    "allow_custom_command": False,
+    "allow_advanced_features": False,
+    "language": "en",
 }
 
 
@@ -160,6 +161,7 @@ class Tools:
     # True when ffmpeg is a file we found ourselves rather than one on PATH;
     # only then does yt-dlp need to be told where it is
     ffmpeg_bundled: bool = False
+    ffprobe: Optional[str] = None
 
 
 def _find_binary(name, folders):
@@ -195,7 +197,7 @@ def _seed_from_bundle(relative_path):
 
 
 def find_tools(folder=None):
-    """Locate yt-dlp and ffmpeg, unpacking bundled copies on the first run.
+    """Locate yt-dlp, ffmpeg and ffprobe, unpacking bundled copies on the first run.
 
     The two layouts are deliberately different. In the repo, executables sit
     in bin/ so the project root stays tidy. Packaged, they sit directly beside
@@ -220,8 +222,11 @@ def find_tools(folder=None):
 
     yt_dlp, _ = _find_binary("yt-dlp", folders)
     ffmpeg, ffmpeg_bundled = _find_binary("ffmpeg", folders)
+    ffprobe, _ = _find_binary("ffprobe", folders)
 
-    return Tools(yt_dlp=yt_dlp, ffmpeg=ffmpeg, ffmpeg_bundled=ffmpeg_bundled)
+    return Tools(
+        yt_dlp=yt_dlp, ffmpeg=ffmpeg, ffmpeg_bundled=ffmpeg_bundled, ffprobe=ffprobe
+    )
 
 
 # ==================================================
@@ -363,6 +368,50 @@ def resolve_custom_command(text, yt_dlp_path):
 
 
 # ==================================================
+# LEFTOVER CLEANUP
+# ==================================================
+
+# When video and audio must be downloaded as separate files before merging,
+# yt-dlp names them with the format id ahead of the extension (e.g.
+# "Song.f399.mp4"). They are deleted right after a successful merge, but not
+# if the merge never happens — ffmpeg missing, the merge itself failing, or
+# the download being stopped midway all leave them behind.
+_LEFTOVER_FORMAT_ID_RE = re.compile(r"\.f[0-9A-Za-z]+\.[^.\\/]+$")
+
+
+def snapshot_folder(folder):
+    """The filenames currently in `folder`, or empty if it doesn't exist yet."""
+    try:
+        return set(os.listdir(folder))
+    except OSError:
+        return set()
+
+
+def _is_leftover(filename):
+    """A partial download or an unmerged video/audio piece, by its name alone."""
+    return (
+        filename.endswith(".part")
+        or filename.endswith(".ytdl")
+        or bool(_LEFTOVER_FORMAT_ID_RE.search(filename))
+    )
+
+
+def cleanup_leftovers(folder, before):
+    """Delete intermediate files a download left behind.
+
+    Only files that (a) appeared after `before` was taken and (b) match
+    yt-dlp's own naming for unmerged formats or partial downloads are
+    removed, so anything the user already had in the folder is left alone.
+    """
+    for name in snapshot_folder(folder) - before:
+        if _is_leftover(name):
+            try:
+                os.remove(os.path.join(folder, name))
+            except OSError:
+                pass
+
+
+# ==================================================
 # RUNNING COMMANDS
 # ==================================================
 
@@ -378,6 +427,17 @@ def kill_process_tree(process):
         )
     else:
         process.terminate()
+
+
+# Templates for the closing line Runner reports through on_finished. A
+# front-end may pass its own (translated) versions; these English ones are
+# also what runs without a front-end, e.g. under the test suite.
+DEFAULT_RUN_MESSAGES = {
+    "stopped": "\n--- Stopped ---\n",
+    "success": "\n--- Finished ---\n",
+    "failed": "\n--- Failed (exit code {code}) ---\n",
+    "error": "\n--- Could not run: {error} ---\n",
+}
 
 
 class Runner:
@@ -404,16 +464,17 @@ class Runner:
         on_finished: Callable[[str], None],
         shell=False,
         cwd=None,
+        messages=None,
     ):
         self._stop_requested = False
 
         threading.Thread(
             target=self._run,
-            args=(command, on_line, on_finished, shell, cwd),
+            args=(command, on_line, on_finished, shell, cwd, messages or DEFAULT_RUN_MESSAGES),
             daemon=True,
         ).start()
 
-    def _run(self, command, on_line, on_finished, shell, cwd):
+    def _run(self, command, on_line, on_finished, shell, cwd, messages):
         message = ""
 
         try:
@@ -433,14 +494,14 @@ class Runner:
             code = self._process.wait()
 
             if self._stop_requested:
-                message = "\n--- Stopped ---\n"
+                message = messages["stopped"]
             elif code == 0:
-                message = "\n--- Finished ---\n"
+                message = messages["success"]
             else:
-                message = f"\n--- Failed (exit code {code}) ---\n"
+                message = messages["failed"].format(code=code)
 
         except OSError as error:
-            message = f"\n--- Could not run: {error} ---\n"
+            message = messages["error"].format(error=error)
 
         finally:
             self._process = None

@@ -190,6 +190,36 @@ def test_a_frozen_onefile_build_seeds_yt_dlp_beside_the_exe():
         _shutil.rmtree(app, ignore_errors=True)
 
 
+def test_find_tools_locates_ffprobe_next_to_ffmpeg():
+    import shutil as _shutil, tempfile
+
+    folder = tempfile.mkdtemp()
+    try:
+        open(os.path.join(folder, "ffmpeg.exe"), "w").close()
+        open(os.path.join(folder, "ffprobe.exe"), "w").close()
+
+        tools = core.find_tools(folder=folder)
+        assert tools.ffmpeg == os.path.join(folder, "ffmpeg.exe")
+        assert tools.ffprobe == os.path.join(folder, "ffprobe.exe")
+    finally:
+        _shutil.rmtree(folder, ignore_errors=True)
+
+
+def test_find_tools_reports_missing_ffmpeg_and_ffprobe():
+    import shutil as _shutil, tempfile
+
+    folder = tempfile.mkdtemp()  # empty: neither binary is there
+    original_which = _shutil.which
+    core.shutil.which = lambda name: None  # isolate from whatever is on this machine's PATH
+    try:
+        tools = core.find_tools(folder=folder)
+        assert tools.ffmpeg is None
+        assert tools.ffprobe is None
+    finally:
+        core.shutil.which = original_which
+        _shutil.rmtree(folder, ignore_errors=True)
+
+
 # ==================================================
 # QUALITY PRESETS
 # ==================================================
@@ -223,6 +253,56 @@ def test_a_yt_dlp_command_is_pointed_at_the_located_binary():
 
 def test_any_other_command_is_left_alone():
     assert core.resolve_custom_command("ffmpeg -i a b", "C:/y.exe") == "ffmpeg -i a b"
+
+
+# ==================================================
+# LEFTOVER CLEANUP
+# ==================================================
+
+
+def _touch(folder, *names):
+    for name in names:
+        open(os.path.join(folder, name), "w").close()
+
+
+def test_unmerged_formats_and_partial_downloads_are_removed():
+    import shutil as _shutil, tempfile
+
+    folder = tempfile.mkdtemp()
+    try:
+        before = core.snapshot_folder(folder)
+        _touch(
+            folder,
+            "Song.f399.mp4",
+            "Song.f251.webm",
+            "Song.f399.mp4.part",
+            "Song.mp4",
+            "cache.ytdl",
+        )
+        core.cleanup_leftovers(folder, before)
+        assert sorted(os.listdir(folder)) == ["Song.mp4"]
+    finally:
+        _shutil.rmtree(folder, ignore_errors=True)
+
+
+def test_files_already_in_the_folder_are_never_touched():
+    import shutil as _shutil, tempfile
+
+    folder = tempfile.mkdtemp()
+    try:
+        # Looks exactly like a leftover, but it predates the download
+        _touch(folder, "Old.f1.txt")
+        before = core.snapshot_folder(folder)
+
+        _touch(folder, "New.mp4")
+        core.cleanup_leftovers(folder, before)
+        assert sorted(os.listdir(folder)) == ["New.mp4", "Old.f1.txt"]
+    finally:
+        _shutil.rmtree(folder, ignore_errors=True)
+
+
+def test_snapshot_of_a_missing_folder_is_empty():
+    assert core.snapshot_folder(os.path.join(FOLDER, "does-not-exist")) == set()
 
 
 # ==================================================
@@ -273,6 +353,19 @@ def test_success_and_failure_are_told_apart():
 
 def test_a_command_that_cannot_start_is_reported():
     assert "Could not run" in run_and_wait(["definitely_not_a_real_program_xyz"])
+
+
+def test_custom_message_templates_are_used_instead_of_the_english_defaults():
+    # This is how a front-end plugs in translated status text (see ytdlp_qt_gui)
+    messages = {
+        "stopped": "PARADO",
+        "success": "EXITO",
+        "failed": "FALLO-{code}",
+        "error": "ERROR-{error}",
+    }
+    assert run_and_wait(["cmd", "/c", "exit 0"], messages=messages) == "EXITO"
+    assert run_and_wait(["cmd", "/c", "exit 3"], messages=messages) == "FALLO-3"
+    assert "ERROR-" in run_and_wait(["definitely_not_a_real_program_xyz"], messages=messages)
 
 
 def test_output_is_streamed_line_by_line():
@@ -382,7 +475,7 @@ def test_a_frozen_build_reads_settings_out_of_the_bundle():
             assert settings["theme"] == "light"
             assert settings["download_folder"] == r"D:\Shipped"
             # ...a key the bundle omits still falls back to the built-in default
-            assert settings["allow_custom_command"] is False
+            assert settings["allow_advanced_features"] is False
             # ...and nothing was written beside the executable
             assert not os.path.exists(os.path.join(app, "settings.json"))
             assert not os.path.exists(os.path.join(app, "settings"))
