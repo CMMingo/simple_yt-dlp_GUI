@@ -2,11 +2,16 @@
 #
 # Generated with:
 #   pyi-makespec --onefile --windowed --name "yt-dlp GUI" --paths src \
-#     --add-data "bin/yt-dlp.exe;." --add-data "settings/settings.json;." \
-#     --specpath packaging src/ytdlp_qt_gui.py
+#     --add-data "bin/yt-dlp.exe;." --specpath packaging src/ytdlp_qt_gui.py
 #
 # Build from the project root with:
 #   pyinstaller "packaging/yt-dlp GUI.spec"
+#
+# No settings.json is bundled: ytdlp_core.load_settings() already falls back
+# to DEFAULT_SETTINGS when there's none in the bundle, so a frozen build with
+# no customized defaults to ship needs nothing here. See
+# bundled_settings_path() in ytdlp_core.py if that's ever needed again — add
+# back a --add-data "settings/settings.json;." entry pointing at a real file.
 #
 # Paths below are relative to this file's own folder (packaging/), which is
 # how PyInstaller resolves a .spec regardless of the current working
@@ -50,7 +55,7 @@ a = Analysis(
     ['../src/ytdlp_qt_gui.py'],
     pathex=['../src'],
     binaries=[],
-    datas=[('../bin/yt-dlp.exe', '.'), ('../settings/settings.json', '.')],
+    datas=[('../bin/yt-dlp.exe', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

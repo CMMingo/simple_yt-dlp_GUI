@@ -173,7 +173,10 @@ therefore drops zero files next to itself until it's used.
 
 **Precedence** in `load_settings()`: built-in `DEFAULT_SETTINGS` → bundled `settings.json` (if frozen)
 → the user's own file. Each layer only overrides the keys it defines, so a bundle that ships a partial
-`settings.json` still gets sane defaults for anything it omits.
+`settings.json` still gets sane defaults for anything it omits. The current `.spec` doesn't bundle a
+`settings.json` at all — there's no customized default worth shipping — so that middle layer is
+currently a no-op (`bundled_settings_path()` just doesn't exist, `_read_json` catches the `OSError` and
+returns `{}`); the mechanism stays in place for whenever there is one worth shipping again.
 
 **No `%LOCALAPPDATA%` fallback, ever.** Settings always live with the app (project root or exe folder).
 This is what makes "copy the folder" or "copy the exe" a complete backup/move — nothing is left behind
@@ -204,7 +207,7 @@ blanket `*.spec` ignore rule) so the exact build configuration — the `--add-da
 module excludes, the UPX setting — isn't just documented prose that can drift from what a real build
 uses.
 
-Its paths (`../src/ytdlp_qt_gui.py`, `../bin/yt-dlp.exe`, `../settings/settings.json`) are relative to
+Its paths (`../src/ytdlp_qt_gui.py`, `../bin/yt-dlp.exe`) are relative to
 **the `.spec` file's own folder**, not to the working directory `pyinstaller` is invoked from — that's
 how PyInstaller resolves relative paths inside a spec. Build from the project root
 (`pyinstaller "packaging/yt-dlp GUI.spec"`); `dist/` and `build/` still land in the project root
@@ -232,7 +235,7 @@ gets thrown away and regenerated on every test iteration during development.
 To regenerate the `.spec` from scratch after changing the build flags:
 
 ```bash
-pyi-makespec --onefile --windowed --name "yt-dlp GUI" --paths src --add-data "bin/yt-dlp.exe;." --add-data "settings/settings.json;." --specpath packaging src/ytdlp_qt_gui.py
+pyi-makespec --onefile --windowed --name "yt-dlp GUI" --paths src --add-data "bin/yt-dlp.exe;." --specpath packaging src/ytdlp_qt_gui.py
 ```
 
 `pyi-makespec` rewrites the script's own path to be relative to `--specpath`, but leaves `pathex` and

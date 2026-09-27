@@ -126,9 +126,10 @@ pip install pyinstaller
 pyinstaller "packaging/yt-dlp GUI.spec"
 ```
 
-Run from the project root. Produces `dist/yt-dlp GUI.exe` (~60 MB). yt-dlp and your current settings
-are seeded next to the `.exe` on first run. To bundle ffmpeg too (adds ~450 MB — usually better
-shipped alongside the `.exe` in a zip instead), add its `datas` entries to
+Run from the project root. Produces `dist/yt-dlp GUI.exe` (~60 MB). yt-dlp is seeded next to the `.exe`
+on first run, and a `settings.json` with the built-in defaults appears the first time you change
+something. To bundle ffmpeg too (adds ~450 MB — usually better shipped alongside the `.exe` in a zip
+instead), add its `datas` entries to
 [`packaging/yt-dlp GUI.spec`](packaging/yt-dlp%20GUI.spec).
 
 ---
