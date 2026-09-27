@@ -12,24 +12,33 @@ line.
 ## Features
 
 - Audio (MP3) or video (MP4) downloads
-- Quality presets — Best, 4K, 2K, 1080p, 720p, 480p, Smallest — plus a manual format-code box
-- Split a download into one file per chapter
-- Playlist downloads are opt-in
-- Real progress bar with speed and ETA
-- Stop button
-- Custom command box, for anything the UI doesn't cover
-- Light/dark theme, settings persisted between sessions
-- Runs yt-dlp in the background; the window never freezes
+- Quality presets — Best, 4K, 2K, 1080p, 720p, 480p, Smallest
+- Real-time progress bar with speed and ETA, and a Stop button
+- English and Spanish interface, switchable at any time from Settings
+- Warns on startup if ffmpeg/ffprobe aren't installed, instead of failing silently mid-download
+- Automatically cleans up leftover files from an interrupted or failed download
+- Light/dark theme; every setting is remembered between sessions
+- Runs yt-dlp in the background — the window never freezes
+
+### Simple by default, advanced when you need it
+
+The app opens in a simple mode with only the essentials on screen. Turning on **Allow advanced
+features** in Settings additionally unlocks:
+
+- A manual format-code box, for picking an exact stream combination yt-dlp offers
+- Splitting a download into one file per chapter
+- Whole-playlist downloads (off by default — a pasted playlist link only downloads the one video)
+- A custom command box, for anything the UI doesn't cover, run as typed
 
 ---
 
 ## Requirements
 
-- Python 3.8+
-- PySide6 — `pip install pyside6`
+- Python 3.12+
+- PySide6 — `pip install pyside6` (or `uv sync`, if you use [uv](https://docs.astral.sh/uv/))
 - `yt-dlp`, found in `bin/`, or on PATH. Updates itself at startup.
 - `ffmpeg` + `ffprobe`, on PATH or in `bin/`. Needed for MP3 extraction, merging, and chapter
-  splitting — without it the app runs but warns you when those fail.
+  splitting.
 
 Optional, for building a standalone `.exe`: PyInstaller.
 
@@ -47,24 +56,28 @@ python src/ytdlp_qt_gui.py
 
 1. Pick **Audio** or **Video**.
 2. Paste the URL.
-3. For video, pick a **Quality** preset (or type a format code in **Advanced**).
-4. Optionally set a filename, download folder, chapter split, and playlist mode.
+3. For video, pick a **Quality** preset.
+4. Optionally set a filename and download folder.
 5. Click **Download**.
 
 Notes:
 
-- Video with no quality/format chosen: the button reads **List formats** and lists what's available
-  instead of downloading.
 - **Stop** cancels the running download.
-- Every run ends with `--- Finished ---`, `--- Failed (exit code N) ---`, or `--- Stopped ---`.
-- **Custom command** is hidden until enabled in the **Settings** tab; when used, it replaces every
-  other option and runs the typed command as-is.
+- Every run ends with a translated **Finished**, **Failed**, or **Stopped** line in the output log.
+- If ffmpeg and/or ffprobe can't be found, a banner appears above the tabs explaining what won't work
+  until they're installed.
 
 ---
 
 ## Settings
 
-`settings.json` (`theme`, `download_folder`, `allow_custom_command`):
+| Setting | What it does |
+| --- | --- |
+| Language | English or Español — applies immediately, no restart |
+| Theme | Light or dark |
+| Allow advanced features | Shows the format-code box, chapter splitting, whole-playlist downloads, and the custom command box described above |
+
+Stored in `settings.json`:
 
 | Running | Path |
 | --- | --- |
@@ -80,22 +93,25 @@ portable. `settings/` is git-ignored.
 
 ```
 src/
-    ytdlp_core.py          all logic — no GUI imports
-    ytdlp_qt_gui.py         PySide6 front-end
+    ytdlp_core.py           all logic — no GUI imports
+    ytdlp_qt_gui.py          PySide6 front-end
+    translations.py          UI text, English and Spanish
 tests/
-    test_core.py            tests for ytdlp_core; no window opened
+    test_core.py             tests for ytdlp_core; no window opened
+    test_translations.py     tests for translations.py; no window opened
 deprecated/
-    ytdlp_tkinter_gui.py    old Tkinter app, self-contained
+    ytdlp_tkinter_gui.py     old Tkinter app, self-contained
 packaging/
-    yt-dlp GUI.spec         PyInstaller build spec
-bin/                        yt-dlp.exe / ffmpeg.exe (git-ignored contents)
-settings/settings.json      git-ignored
+    yt-dlp GUI.spec          PyInstaller build spec
+bin/                         yt-dlp.exe / ffmpeg.exe (git-ignored contents)
+settings/settings.json       git-ignored
 ```
 
-`ytdlp_core.py` has no GUI dependency and is covered by `tests/test_core.py`:
+`ytdlp_core.py` and `translations.py` have no GUI dependency and are covered by their own test files:
 
 ```bash
 python tests/test_core.py
+python tests/test_translations.py
 ```
 
 See [`src/technical_decisions.md`](src/technical_decisions.md) for the reasoning behind the
@@ -110,7 +126,7 @@ pip install pyinstaller
 pyinstaller "packaging/yt-dlp GUI.spec"
 ```
 
-Run from the project root. Produces `dist/yt-dlp GUI.exe` (~63 MB). yt-dlp and your current settings
+Run from the project root. Produces `dist/yt-dlp GUI.exe` (~60 MB). yt-dlp and your current settings
 are seeded next to the `.exe` on first run. To bundle ffmpeg too (adds ~450 MB — usually better
 shipped alongside the `.exe` in a zip instead), add its `datas` entries to
 [`packaging/yt-dlp GUI.spec`](packaging/yt-dlp%20GUI.spec).
@@ -123,4 +139,4 @@ shipped alongside the `.exe` in a zip instead), add its `datas` entries to
 python deprecated/ytdlp_tkinter_gui.py
 ```
 
-Single-file, no dependencies beyond the standard library. No longer receives new features.
+Old. Single-file, no dependencies beyond the standard library. No longer receives new features.
